@@ -1,0 +1,16 @@
+{
+    "Normal": {
+        "name": "\u505a\u6211\u5973\u670b\u53cb",
+        "info": "\u8001\u516c\uff5e\u4f60\u6765\u5566\uff01 (\u2661>\ud81a\udd66<)/\u2665",
+        "uid": [],
+        "path": "Normal.txt"
+    },
+    "p7777777": {
+        "name": "n",
+        "info": "i2",
+        "uid": [
+            123
+        ],
+        "path": "p7777777.txt"
+    }
+}
