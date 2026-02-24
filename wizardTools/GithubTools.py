@@ -3,7 +3,7 @@ import os
 import requests
 import difflib
 
-GITHUB_TOKEN = r"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"
+GITHUB_TOKEN = r""
 REPO_NAME = "IntelliMarkets/Jianer_Plugins_Index"
 
 
