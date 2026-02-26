@@ -790,3 +790,22 @@ a:hover {
 .n-message--loading-type .n-message__icon {
   color: var(--accent) !important;
 }
+
+/* 9. NDynamicTags Overflow Fix */
+.n-dynamic-tags {
+  max-width: 100%;
+}
+
+.n-dynamic-tags .n-tag {
+  max-width: 100%;
+  height: auto !important;
+  white-space: normal !important;
+  word-break: break-all;
+  padding: 4px 7px !important;
+  box-sizing: border-box;
+}
+
+.n-dynamic-tags .n-tag__content {
+  white-space: normal !important;
+  overflow-wrap: break-word;
+}

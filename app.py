@@ -14,6 +14,7 @@ import zipfile
 import re
 import shlex
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 import base64
@@ -55,6 +56,7 @@ sock = Sock(app) if Sock is not None else None
 
 # Global state
 install_progress = {}
+install_progress_lock = threading.Lock()
 napcat_progress = {}
 napcat_processes = {}
 jianer_processes = {}
@@ -462,7 +464,7 @@ def set_github_token_route():
 
 def get_github_client():
     webui_config = load_json(WEBUI_CONFIG_PATH)
-    token = webui_config.get('github_token')
+    token = os.getenv('SETUPWIZARD_GITHUB_TOKEN') or os.getenv('GITHUB_TOKEN') or webui_config.get('github_token')
     # Use a default token if none provided? Or let it be None (unauthenticated, lower rate limit)
     # The original code had a hardcoded token, maybe we should respect that if needed, 
     # but for now let's rely on user provided token or None.
@@ -481,7 +483,7 @@ def with_github_proxy(url: str) -> str:
 
 def github_headers():
     cfg = load_json(WEBUI_CONFIG_PATH)
-    token = cfg.get('github_token')
+    token = os.getenv('SETUPWIZARD_GITHUB_TOKEN') or os.getenv('GITHUB_TOKEN') or cfg.get('github_token')
     headers = {'Accept': 'application/vnd.github.v3+json'}
     if token:
         headers['Authorization'] = f"token {token}"
@@ -674,7 +676,7 @@ def plugins_remote_route():
 @app.route('/api/plugins/infos', methods=['GET'])
 def plugin_infos_route():
     names = request.args.get('names', '').split(',')
-    names = [n for n in names if n]
+    names = [n.strip() for n in names if n and n.strip()]
     
     results = {}
     
@@ -697,7 +699,7 @@ def plugin_infos_route():
         if not names:
             return jsonify(results)
 
-        max_workers = min(8, max(1, len(names)))
+        max_workers = min(10, max(1, len(names)))
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = [pool.submit(fetch_intro, name) for name in names]
             for future in as_completed(futures):
@@ -731,41 +733,45 @@ def plugin_info_route(name):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-import threading
-
 def install_plugin_task(name):
     global install_progress
-    install_progress[name] = {'status': 'starting', 'percent': 0, 'message': 'Starting...'}
+    with install_progress_lock:
+        install_progress[name] = {'status': 'starting', 'percent': 0, 'message': 'Starting...'}
     
     try:
-        install_progress[name]['status'] = 'downloading'
-        install_progress[name]['message'] = 'Downloading files...'
-        install_progress[name]['percent'] = 20
+        with install_progress_lock:
+            install_progress[name]['status'] = 'downloading'
+            install_progress[name]['message'] = 'Downloading files...'
+            install_progress[name]['percent'] = 20
         
         plugins_dir = os.path.join(jianer_bot_path, 'plugins')
         local_path = os.path.join(plugins_dir, name)
         
         download_folder_via_api(name, plugins_dir)
         
-        install_progress[name]['percent'] = 80
-        install_progress[name]['status'] = 'installing'
-        install_progress[name]['message'] = 'Installing dependencies...'
+        with install_progress_lock:
+            install_progress[name]['percent'] = 80
+            install_progress[name]['status'] = 'installing'
+            install_progress[name]['message'] = 'Installing dependencies...'
         
         # Check for requirements.txt and install
         req_path = os.path.join(local_path, 'requirements.txt')
         if os.path.exists(req_path):
             pip_install_requirements(req_path)
             
-        install_progress[name]['percent'] = 100
-        install_progress[name]['status'] = 'done'
-        install_progress[name]['message'] = 'Installation complete.'
+        with install_progress_lock:
+            install_progress[name]['percent'] = 100
+            install_progress[name]['status'] = 'done'
+            install_progress[name]['message'] = 'Installation complete.'
         
     except requests.exceptions.RequestException as e:
-        install_progress[name]['status'] = 'error'
-        install_progress[name]['message'] = format_network_error(e)
+        with install_progress_lock:
+            install_progress[name]['status'] = 'error'
+            install_progress[name]['message'] = format_network_error(e)
     except Exception as e:
-        install_progress[name]['status'] = 'error'
-        install_progress[name]['message'] = str(e)
+        with install_progress_lock:
+            install_progress[name]['status'] = 'error'
+            install_progress[name]['message'] = str(e)
 
 @app.route('/api/plugins/install', methods=['POST'])
 def plugin_install_route():
@@ -773,8 +779,9 @@ def plugin_install_route():
     if not name:
         return jsonify({'ok': False, 'error': 'No name provided'}), 400
         
-    if name in install_progress and install_progress[name]['status'] in ['starting', 'downloading', 'installing']:
-        return jsonify({'ok': False, 'error': 'Already installing'}), 400
+    with install_progress_lock:
+        if name in install_progress and install_progress[name].get('status') in ['starting', 'downloading', 'installing']:
+            return jsonify({'ok': False, 'error': 'Already installing'}), 400
         
     thread = threading.Thread(target=install_plugin_task, args=(name,))
     thread.start()
@@ -783,9 +790,29 @@ def plugin_install_route():
 
 @app.route('/api/plugins/progress/<name>', methods=['GET'])
 def plugin_progress_route(name):
-    if name in install_progress:
-        return jsonify(install_progress[name])
-    return jsonify({'status': 'unknown', 'percent': 0})
+    with install_progress_lock:
+        if name in install_progress:
+            return jsonify(install_progress[name])
+    return jsonify({'status': 'unknown', 'percent': 0, 'message': ''})
+
+if sock is not None:
+    @sock.route('/api/plugins/progress/ws/<name>')
+    def plugin_progress_ws(ws, name):
+        last_payload = None
+        try:
+            while True:
+                with install_progress_lock:
+                    payload_obj = install_progress.get(name) or {'status': 'unknown', 'percent': 0, 'message': ''}
+                payload = json.dumps(payload_obj, ensure_ascii=False)
+                if payload != last_payload:
+                    ws.send(payload)
+                    last_payload = payload
+                status = payload_obj.get('status')
+                if status in ('done', 'error'):
+                    break
+                time.sleep(0.25)
+        except Exception:
+            return
 
 @app.route('/api/plugins/remove', methods=['POST'])
 def plugin_remove_route():
@@ -898,6 +925,7 @@ def set_pip_config_route():
 jianer_process = None
 jianer_logs = []
 jianer_logs_lock = threading.Lock()
+jianer_logs_cv = threading.Condition(jianer_logs_lock)
 
 def _append_jianer_log_line(line):
     if line is None:
@@ -907,6 +935,10 @@ def _append_jianer_log_line(line):
         jianer_logs.append(text)
         if len(jianer_logs) > 2000:
             del jianer_logs[:-2000]
+        try:
+            jianer_logs_cv.notify_all()
+        except Exception:
+            pass
 
 def _get_jianer_logs_snapshot():
     with jianer_logs_lock:
@@ -931,14 +963,15 @@ if sock is not None:
             ws.send(json.dumps({'type': 'snapshot', 'logs': snapshot}))
             while True:
                 chunk = []
-                with jianer_logs_lock:
+                with jianer_logs_cv:
+                    jianer_logs_cv.wait_for(lambda: len(jianer_logs) > cursor, timeout=30)
                     total = len(jianer_logs)
                     if total > cursor:
                         chunk = jianer_logs[cursor:total]
                         cursor = total
                 if chunk:
-                    ws.send(json.dumps({'type': 'lines', 'logs': chunk}))
-                time.sleep(0.25)
+                    for line in chunk:
+                        ws.send(json.dumps({'type': 'lines', 'logs': [line]}, ensure_ascii=False))
         except Exception:
             return
 
@@ -1018,7 +1051,12 @@ def _rewrite_python_cmd_for_bash(cmd_str, python_exec, bash_flavor='msys'):
     if not re.match(r'^\s*(python|python3|py)\b', text):
         return text
     py_for_bash = shlex.quote(_path_for_bash(python_exec, bash_flavor=bash_flavor))
-    return re.sub(r'^\s*(python|python3|py)\b', py_for_bash, text, count=1)
+    def repl(_m):
+        rest = text[len(_m.group(0)):]
+        if re.match(r'^\s+-u(\s|$)', rest):
+            return py_for_bash
+        return f"{py_for_bash} -u"
+    return re.sub(r'^\s*(python|python3|py)\b', repl, text, count=1)
 
 def _rewrite_python_cmd_native(cmd_str, python_exec):
     text = str(cmd_str or '').strip()
@@ -1029,7 +1067,12 @@ def _rewrite_python_cmd_native(cmd_str, python_exec):
     if not re.match(r'^\s*(python|python3|py)\b', text):
         return text
     py_exec_quoted = f'"{python_exec}"'
-    return re.sub(r'^\s*(python|python3|py)\b', lambda _m: py_exec_quoted, text, count=1)
+    def repl(_m):
+        rest = text[len(_m.group(0)):]
+        if re.match(r'^\s+-u(\s|$)', rest):
+            return py_exec_quoted
+        return f"{py_exec_quoted} -u"
+    return re.sub(r'^\s*(python|python3|py)\b', repl, text, count=1)
 
 def _detect_shell_mode(shell_mode):
     raw = str(shell_mode or '').strip().lower()
@@ -1113,6 +1156,7 @@ def jianer_start_route():
         if venv_path:
             env['VIRTUAL_ENV'] = _normalize_jianer_venv_path(venv_path)
         env['JIANER_PYTHON'] = py_exec
+        env['PYTHONUNBUFFERED'] = '1'
 
         if plat == 'windows':
             try:

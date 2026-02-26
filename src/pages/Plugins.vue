@@ -152,7 +152,15 @@ function shownList() {
   let base = remote.value
   if (filter.value === 'installed') base = local.value
   if (filter.value === 'updatable') base = updatable.value
-  if (search.value) base = base.filter(name => name.includes(search.value))
+  const q = String(search.value || '').trim().toLowerCase()
+  if (q) {
+    base = base.filter((name) => {
+      const n = String(name || '').toLowerCase()
+      if (n.includes(q)) return true
+      const intro = String(intros.value?.[name] || '').toLowerCase()
+      return intro.includes(q)
+    })
+  }
   return base
 }
 
@@ -188,7 +196,7 @@ function updateFromCache() {
 
 async function loadIntroInBackground(names, taskId) {
   if (!names.length) return
-  const chunkSize = 20
+  const chunkSize = 10
   for (let i = 0; i < names.length; i += chunkSize) {
     if (taskId !== introTaskId) return
     const chunk = names.slice(i, i + chunkSize)
@@ -285,6 +293,70 @@ async function showInfo(name) {
   }
 }
 
+function getPluginProgressWsUrl(name) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${proto}://${window.location.host}/api/plugins/progress/ws/${encodeURIComponent(name)}`
+}
+
+function applyInstallProgress(name, p) {
+  installProgress.value[name] = { percent: p?.percent || 0, status: p?.status || 'running' }
+  installLogs.value[name] = p?.message || ''
+}
+
+function waitInstallProgressWebSocket(name) {
+  if (typeof WebSocket === 'undefined') return Promise.reject(new Error('no-websocket'))
+  return new Promise((resolve, reject) => {
+    let ws
+    let opened = false
+    let finished = false
+    const url = getPluginProgressWsUrl(name)
+    try {
+      ws = new WebSocket(url)
+    } catch (e) {
+      reject(e)
+      return
+    }
+    const fail = (e) => {
+      if (finished) return
+      finished = true
+      try { ws.close() } catch {}
+      reject(e)
+    }
+    ws.onopen = () => {
+      opened = true
+    }
+    ws.onmessage = (event) => {
+      let p = null
+      try {
+        p = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      applyInstallProgress(name, p)
+      if (p?.status === 'done' || p?.status === 'error') {
+        finished = true
+        try { ws.close() } catch {}
+        resolve(p)
+      }
+    }
+    ws.onerror = () => {}
+    ws.onclose = () => {
+      if (finished) return
+      if (!opened) fail(new Error('ws-connect-failed'))
+      else fail(new Error('ws-closed'))
+    }
+  })
+}
+
+async function waitInstallProgressPolling(name) {
+  for (;;) {
+    const p = await pluginProgress(name)
+    applyInstallProgress(name, p)
+    if (p?.status === 'done' || p?.status === 'error') return p
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+}
+
 async function install(name) {
   installing.value[name] = true
   installProgress.value[name] = { percent: 0, status: 'starting' }
@@ -298,22 +370,20 @@ async function install(name) {
       return
     }
 
-    for (;;) {
-      const p = await pluginProgress(name)
-      installProgress.value[name] = { percent: p.percent || 0, status: p.status || 'running' }
-      installLogs.value[name] = p.message || ''
-      if (p.status === 'done' || p.status === 'error') {
-        installing.value[name] = false
-        if (p.status === 'done') {
-          message.success('安装成功')
-          await refreshAll()
-        } else {
-          message.error(p.message || '安装失败')
-        }
-        break
-      }
-      await new Promise(resolve => setTimeout(resolve, 500))
+    let finalProgress = null
+    try {
+      finalProgress = await waitInstallProgressWebSocket(name)
+    } catch {
+      finalProgress = await waitInstallProgressPolling(name)
     }
+
+    installing.value[name] = false
+    if (finalProgress?.status === 'done') {
+      message.success('安装成功')
+      await refreshAll()
+      return
+    }
+    message.error(finalProgress?.message || '安装失败')
   } catch (e) {
     installing.value[name] = false
     message.error('安装失败: ' + (e?.message || '未知错误'))

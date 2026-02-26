@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { state } from '../store'
-import { NForm, NFormItem, NSelect, NInput, NCard, NButton, NIcon } from 'naive-ui'
+import { NForm, NFormItem, NSelect, NInput, NCard, NButton, NIcon, NDynamicInput } from 'naive-ui'
 import { BookOpen24Regular } from '@vicons/fluent'
 
 const proxyOptions = [
@@ -10,19 +10,16 @@ const proxyOptions = [
   { label: 'Mirror - hk > cloudflare', value: 'https://sign.0w0.ing/api/sign/30366' }
 ]
 
-const blackListText = computed({
-  get: () => {
-    const v = state.config.black_list
-    if (Array.isArray(v)) return v.join('\n')
-    return String(v || '')
-  },
-  set: (value) => {
-    state.config.black_list = String(value || '')
-      .split(/\r?\n/)
-      .map(i => i.trim())
-      .filter(Boolean)
-  }
+const blackList = ref([])
+
+onMounted(() => {
+  const v = state.config.black_list
+  blackList.value = Array.isArray(v) ? v : String(v || '').split(/\r?\n/).filter(i => i)
 })
+
+watch(blackList, (v) => {
+  state.config.black_list = v
+}, { deep: true })
 </script>
 
 <template>
@@ -44,7 +41,15 @@ const blackListText = computed({
         <NSelect :options="['DEBUG', 'TRACE', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'].map(i => ({ label: i, value: i }))" v-model:value="state.config.Log_level" />
       </NFormItem>
       <NFormItem label="黑名单">
-        <NInput v-model:value="blackListText" type="textarea" placeholder="一行一个" />
+        <NDynamicInput v-model:value="blackList" :on-create="() => ''">
+          <template #default="{ value, index }">
+            <NInput 
+              v-model:value="blackList[index]" 
+              placeholder="输入黑名单 QQ 号" 
+              :allow-input="(v) => !v || /^\d+$/.test(v)"
+            />
+          </template>
+        </NDynamicInput>
       </NFormItem>
       <NFormItem label="签名服务器（已过时）">
         <NSelect :options="proxyOptions" v-model:value="state.appsettings.SignServerUrl" />

@@ -1,47 +1,35 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { state } from '../store'
-import { NForm, NFormItem, NInput, NCard, NButton, NIcon } from 'naive-ui'
+import { NForm, NFormItem, NCard, NButton, NIcon, NDynamicInput } from 'naive-ui'
 import { BookOpen24Regular } from '@vicons/fluent'
 
-const sloganText = computed({
-  get: () => {
-    const v = state.config.Others.slogan
-    if (Array.isArray(v)) return v.join('\n')
-    return String(v || '')
-  },
-  set: (value) => {
-    state.config.Others.slogan = String(value || '')
-  }
+const sloganList = ref([])
+const complimentList = ref([])
+const pokeRejectList = ref([])
+
+onMounted(() => {
+  const s = state.config.Others.slogan
+  sloganList.value = Array.isArray(s) ? s : String(s || '').split(/\r?\n/).filter(i => i)
+  
+  const c = state.config.Others.compliment
+  complimentList.value = Array.isArray(c) ? c : []
+  
+  const p = state.config.Others.poke_rejection_phrases
+  pokeRejectList.value = Array.isArray(p) ? p : []
 })
 
-const complimentText = computed({
-  get: () => {
-    const v = state.config.Others.compliment
-    if (Array.isArray(v)) return v.join('\n')
-    return String(v || '')
-  },
-  set: (value) => {
-    state.config.Others.compliment = String(value || '')
-      .split(/\r?\n/)
-      .map(i => i.trim())
-      .filter(Boolean)
-  }
-})
+watch(sloganList, (v) => {
+  state.config.Others.slogan = v.join('\n')
+}, { deep: true })
 
-const pokeRejectText = computed({
-  get: () => {
-    const v = state.config.Others.poke_rejection_phrases
-    if (Array.isArray(v)) return v.join('\n')
-    return String(v || '')
-  },
-  set: (value) => {
-    state.config.Others.poke_rejection_phrases = String(value || '')
-      .split(/\r?\n/)
-      .map(i => i.trim())
-      .filter(Boolean)
-  }
-})
+watch(complimentList, (v) => {
+  state.config.Others.compliment = v
+}, { deep: true })
+
+watch(pokeRejectList, (v) => {
+  state.config.Others.poke_rejection_phrases = v
+}, { deep: true })
 </script>
 
 <template>
@@ -54,13 +42,13 @@ const pokeRejectText = computed({
     </template>
     <NForm label-width="140">
       <NFormItem label="口号">
-        <NInput v-model:value="sloganText" type="textarea" placeholder="按行填写" />
+        <NDynamicInput v-model:value="sloganList" preset="input" :on-create="() => ''" placeholder="输入口号" />
       </NFormItem>
       <NFormItem label="夸奖语">
-        <NInput v-model:value="complimentText" type="textarea" placeholder="一行一个" />
+        <NDynamicInput v-model:value="complimentList" preset="input" :on-create="() => ''" placeholder="输入夸奖语" />
       </NFormItem>
       <NFormItem label="戳一戳拒绝语">
-        <NInput v-model:value="pokeRejectText" type="textarea" placeholder="一行一个" />
+        <NDynamicInput v-model:value="pokeRejectList" preset="input" :on-create="() => ''" placeholder="输入拒绝语" />
       </NFormItem>
     </NForm>
   </NCard>

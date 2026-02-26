@@ -47,7 +47,6 @@ const wsConnected = ref(false)
 const logFullscreen = ref(false)
 const wsRef = ref(null)
 const wsRetryTimer = ref(null)
-const statusTimer = ref(null)
 const pollingTimer = ref(null)
 const alive = ref(true)
 
@@ -144,6 +143,9 @@ function connectLogsWebSocket() {
   if (!alive.value) return
   if (typeof WebSocket === 'undefined') {
     startPolling()
+    return
+  }
+  if (wsRef.value && (wsRef.value.readyState === WebSocket.OPEN || wsRef.value.readyState === WebSocket.CONNECTING)) {
     return
   }
   closeWs()
@@ -279,14 +281,10 @@ onMounted(() => {
   refreshStatus()
   fetchLogsFallback().catch(() => {})
   connectLogsWebSocket()
-  statusTimer.value = setInterval(() => {
-    refreshStatus()
-  }, 2000)
 })
 
 onBeforeUnmount(() => {
   alive.value = false
-  if (statusTimer.value) clearInterval(statusTimer.value)
   stopPolling()
   clearRetryTimer()
   closeWs()

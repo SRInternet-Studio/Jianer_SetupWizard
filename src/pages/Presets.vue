@@ -5,7 +5,7 @@ import { getPresetContent, savePresetContent, deletePreset, savePresets as saveP
 import { 
   NCard, NButton, NInput, NModal, NForm, NFormItem, 
   NList, NListItem, NMessageProvider, useMessage,
-  NGrid, NGridItem, NSpace, NText, NEmpty, NIcon, NSpin, NDynamicTags, NAlert
+  NGrid, NGridItem, NSpace, NText, NEmpty, NIcon, NSpin, NDynamicInput, NAlert
 } from 'naive-ui'
 import { Add16Regular, Edit16Regular, Delete16Regular, Save16Regular, Dismiss16Regular } from '@vicons/fluent'
 
@@ -18,13 +18,8 @@ const savingPresets = ref(false)
 const message = useMessage()
 const showIntro = ref(true)
 
-function onCreateUid(label) {
-  const s = String(label || '').trim()
-  if (!/^\d+$/.test(s)) {
-    message.error('只能输入数字')
-    return false
-  }
-  return s
+function onCreateUid() {
+  return ''
 }
 
 function normalizeUid(list) {
@@ -188,15 +183,19 @@ async function savePresets() {
               </NGridItem>
               <NGridItem :span="2">
                 <NFormItem label="适用用户">
-                  <NDynamicTags
+                  <NDynamicInput
                     :key="p.id"
                     v-model:value="p.uid"
-                    @update:value="v => (p.uid = normalizeUid(v))"
                     :on-create="onCreateUid"
-                    size="medium"
-                    :max="64"
-                    input-placeholder="输入 QQ 号后回车添加"
-                  />
+                  >
+                    <template #default="{ value, index }">
+                      <NInput 
+                        v-model:value="p.uid[index]" 
+                        placeholder="输入 QQ 号" 
+                        :allow-input="(v) => !v || /^\d+$/.test(v)"
+                      />
+                    </template>
+                  </NDynamicInput>
                 </NFormItem>
               </NGridItem>
             </NGrid>
