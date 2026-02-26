@@ -290,7 +290,7 @@ def get_voices_route():
 @app.route('/api/github/proxy', methods=['GET'])
 def get_github_proxy_route():
     webui_config = load_json(WEBUI_CONFIG_PATH)
-    base = webui_config.get('github_proxy_base', 'https://mirror.ghproxy.com/')
+    base = webui_config.get('github_proxy_base', 'https://aki.ae-3803.com/')
     enabled = webui_config.get('github_proxy_enabled', True)
     return jsonify({
         'ok': True,
@@ -304,7 +304,7 @@ def get_github_proxy_route():
 def set_github_proxy_route():
     data = request.json
     webui_config = load_json(WEBUI_CONFIG_PATH)
-    base = data.get('base', data.get('github_proxy_base', 'https://mirror.ghproxy.com/'))
+    base = data.get('base', data.get('github_proxy_base', 'https://aki.ae-3803.com/'))
     enabled = data.get('enabled', data.get('github_proxy_enabled', True))
     webui_config['github_proxy_base'] = base
     webui_config['github_proxy_enabled'] = bool(enabled)
@@ -472,7 +472,7 @@ def get_github_client():
 
 def with_github_proxy(url: str) -> str:
     cfg = load_json(WEBUI_CONFIG_PATH)
-    base = cfg.get('github_proxy_base', 'https://mirror.ghproxy.com/')
+    base = cfg.get('github_proxy_base', 'https://aki.ae-3803.com/')
     enabled = cfg.get('github_proxy_enabled', True)
     if enabled and base:
         # Ensure base ends with a single slash
@@ -642,7 +642,7 @@ def download_folder_via_api(folder_path, local_root):
 @app.route('/api/plugins/remote', methods=['GET'])
 def plugins_remote_route():
     cfg = load_json(WEBUI_CONFIG_PATH)
-    proxy_base = cfg.get('github_proxy_base', 'https://mirror.ghproxy.com/')
+    proxy_base = cfg.get('github_proxy_base', 'https://aki.ae-3803.com/')
     proxy_enabled = bool(cfg.get('github_proxy_enabled', True))
     ctx = {
         'github_proxy_enabled': proxy_enabled,
