@@ -26,7 +26,7 @@ try:
 except Exception:
     Sock = None
 
-print("Ver.20260223a")
+print("Ver.260226-r")
 
 # In standalone mode, all necessary packages are in the same directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
