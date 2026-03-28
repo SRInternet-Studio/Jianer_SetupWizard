@@ -20,7 +20,7 @@ import { BookOpen24Regular } from '@vicons/fluent'
         <NInput v-model:value="state.config.Others.bot_name_en" />
       </NFormItem>
       <NFormItem label="管理员QQ">
-        <NInput v-model:value="state.config.owner" type="textarea" placeholder="一行一个或逗号分隔" />
+        <NInput v-model:value="state.config.Others.ROOT_User" type="textarea" placeholder="一行一个或逗号分隔" />
       </NFormItem>
       <NFormItem label="触发提醒词">
         <NInput v-model:value="state.config.Others.reminder" />

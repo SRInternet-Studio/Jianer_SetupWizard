@@ -639,6 +639,27 @@ def download_folder_via_api(folder_path, local_root):
             with open(local_path, "wb") as f:
                 f.write(fr.content)
 
+def _resolve_plugin_payload_root(downloaded_root, name):
+    nested_root = os.path.join(downloaded_root, name)
+    if os.path.isdir(nested_root):
+        return nested_root
+    return downloaded_root
+
+def _resolve_plugin_requirements_path(downloaded_root, payload_root):
+    direct_req = os.path.join(downloaded_root, 'requirements.txt')
+    if os.path.exists(direct_req):
+        return direct_req
+    payload_req = os.path.join(payload_root, 'requirements.txt')
+    if os.path.exists(payload_req):
+        return payload_req
+    return None
+
+def _cleanup_installed_plugin_metadata(plugin_root):
+    for filename in ('README.md', 'readme.md', 'LICENSE', 'license', 'requirements.txt'):
+        path = os.path.join(plugin_root, filename)
+        if os.path.isfile(path):
+            os.remove(path)
+
 @app.route('/api/plugins/remote', methods=['GET'])
 def plugins_remote_route():
     cfg = load_json(WEBUI_CONFIG_PATH)
@@ -746,17 +767,36 @@ def install_plugin_task(name):
         
         plugins_dir = os.path.join(jianer_bot_path, 'plugins')
         local_path = os.path.join(plugins_dir, name)
-        
-        download_folder_via_api(name, plugins_dir)
+        os.makedirs(plugins_dir, exist_ok=True)
+        temp_root = tempfile.mkdtemp(prefix=f"plugin_{name}_")
+        try:
+            download_folder_via_api(name, temp_root)
+            downloaded_root = os.path.join(temp_root, name)
+            if not os.path.isdir(downloaded_root):
+                raise RuntimeError('Downloaded plugin folder is missing.')
+            payload_root = _resolve_plugin_payload_root(downloaded_root, name)
+            req_path = _resolve_plugin_requirements_path(downloaded_root, payload_root)
+
+            with install_progress_lock:
+                install_progress[name]['percent'] = 60
+                install_progress[name]['message'] = 'Preparing plugin files...'
+
+            if os.path.exists(local_path):
+                if os.path.isdir(local_path):
+                    shutil.rmtree(local_path)
+                else:
+                    os.remove(local_path)
+            shutil.copytree(payload_root, local_path)
+            _cleanup_installed_plugin_metadata(local_path)
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
         
         with install_progress_lock:
             install_progress[name]['percent'] = 80
             install_progress[name]['status'] = 'installing'
             install_progress[name]['message'] = 'Installing dependencies...'
         
-        # Check for requirements.txt and install
-        req_path = os.path.join(local_path, 'requirements.txt')
-        if os.path.exists(req_path):
+        if req_path:
             pip_install_requirements(req_path)
             
         with install_progress_lock:
