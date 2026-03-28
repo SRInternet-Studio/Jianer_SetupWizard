@@ -26,17 +26,8 @@ try:
 except Exception:
     Sock = None
 
-def get_app_version():
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(base_dir, 'version.json'), 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data.get('version', 'unknown')
-    except Exception:
-        return 'unknown'
-
-APP_VERSION = get_app_version()
-print(f"Ver.{APP_VERSION}")
+BOOTSTRAP_VERSION = '260226-r'
+print(f"Ver.{BOOTSTRAP_VERSION}")
 
 # In standalone mode, all necessary packages are in the same directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -72,14 +63,15 @@ napcat_processes = {}
 jianer_processes = {}
 jianer_logs_buffer = {}
 update_jobs = {}
-update_processes = {}
 update_jobs_lock = threading.Lock()
+update_processes = {}
 
 # Configuration - Look for files in the current directory
 CONFIG_PATH = os.path.join(current_dir, 'config.json')
 APPSETTINGS_PATH = os.path.join(current_dir, 'appsettings.json')
 WEBUI_CONFIG_PATH = os.path.join(current_dir, 'webui.json')
 INSTANCES_PATH = os.path.join(current_dir, 'instances.json')
+VERSION_JSON_PATH = os.path.join(current_dir, 'version.json')
 
 # Path to Jianer_QQ_bot related directories (now local)
 jianer_bot_path = current_dir
@@ -324,6 +316,53 @@ def set_github_proxy_route():
     save_json(WEBUI_CONFIG_PATH, webui_config)
     return jsonify({'ok': True})
 
+
+def _normalize_mirror_base(base: str):
+    text = str(base or '').strip()
+    if not text:
+        return ''
+    parsed = urlparse(text)
+    if parsed.scheme != 'https' or not parsed.netloc:
+        raise ValueError('镜像地址必须为 https:// 开头的有效 URL')
+    if parsed.query or parsed.fragment:
+        raise ValueError('镜像地址不允许包含 query 或 fragment')
+    if not text.endswith('/'):
+        text += '/'
+    return text
+
+
+@app.route('/api/update/mirror', methods=['GET'])
+def get_update_mirror_route():
+    cfg = load_json(WEBUI_CONFIG_PATH, {})
+    base = str(cfg.get('update_mirror_base') or cfg.get('github_proxy_base') or 'https://aki.ae-3803.com/').strip()
+    enabled = bool(cfg.get('update_mirror_enabled', cfg.get('github_proxy_enabled', True)))
+    return jsonify({
+        'ok': True,
+        'base': base,
+        'enabled': enabled,
+        'update_mirror_base': base,
+        'update_mirror_enabled': enabled
+    })
+
+
+@app.route('/api/update/mirror', methods=['POST'])
+def set_update_mirror_route():
+    data = request.json or {}
+    base = data.get('base', data.get('update_mirror_base', ''))
+    enabled = data.get('enabled', data.get('update_mirror_enabled', True))
+    try:
+        normalized_base = _normalize_mirror_base(base) if str(base or '').strip() else ''
+    except ValueError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+    cfg = load_json(WEBUI_CONFIG_PATH, {})
+    cfg['update_mirror_enabled'] = bool(enabled)
+    if normalized_base:
+        cfg['update_mirror_base'] = normalized_base
+    else:
+        cfg.pop('update_mirror_base', None)
+    save_json(WEBUI_CONFIG_PATH, cfg)
+    return jsonify({'ok': True, 'base': cfg.get('update_mirror_base', ''), 'enabled': bool(cfg.get('update_mirror_enabled', True))})
+
 @app.route('/api/presets', methods=['GET'])
 def list_presets_route():
     try:
@@ -474,9 +513,45 @@ def set_github_token_route():
     return jsonify({'ok': True})
 
 def _read_frontend_version():
+    version_payload = load_json(VERSION_JSON_PATH, {})
+    if isinstance(version_payload, dict):
+        for key in ('frontend_version', 'web_version', 'ui_version'):
+            value = str(version_payload.get(key) or '').strip()
+            if value:
+                return value
     package_path = os.path.join(current_dir, 'package.json')
     data = load_json(package_path, {})
     return str(data.get('version') or '').strip() or '0.0.0'
+
+def _read_backend_version():
+    version_payload = load_json(VERSION_JSON_PATH, {})
+    if isinstance(version_payload, dict):
+        for key in ('backend_version', 'app_version', 'version'):
+            value = str(version_payload.get(key) or '').strip()
+            if value:
+                return value
+    package_path = os.path.join(current_dir, 'package.json')
+    package_payload = load_json(package_path, {})
+    package_version = str(package_payload.get('version') or '').strip()
+    if package_version:
+        return package_version
+    return BOOTSTRAP_VERSION
+
+
+APP_VERSION = _read_backend_version()
+UPDATE_ACTIVE_STATUSES = {'queued', 'checking', 'downloading', 'extracting', 'applying'}
+UPDATE_PRESERVE_NAMES = {
+    '.git',
+    '__pycache__',
+    '.venv',
+    'venv',
+    'config.json',
+    'appsettings.json',
+    'webui.json',
+    'instances.json',
+    'plugins',
+    'prerequisites'
+}
 
 def _normalize_version_for_compare(value: str):
     text = str(value or '').strip().lower()
@@ -548,22 +623,130 @@ def _compose_version_payload():
         'python': sys.version.split(' ')[0]
     }
 
+
+def _pick_release_asset(release_data: dict):
+    assets = release_data.get('assets') if isinstance(release_data, dict) else []
+    if not isinstance(assets, list):
+        assets = []
+    candidates = []
+    for item in assets:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get('browser_download_url') or '').strip()
+        if not url:
+            continue
+        name = str(item.get('name') or '').strip()
+        lower_name = name.lower()
+        score = 0
+        if lower_name.endswith('.zip'):
+            score += 100
+        if 'setupwizard' in lower_name:
+            score += 20
+        if any(k in lower_name for k in ['windows', 'win', 'portable']):
+            score += 10
+        candidates.append((score, url, name))
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        _, picked_url, picked_name = candidates[0]
+        return picked_url, picked_name
+    fallback_url = str((release_data or {}).get('zipball_url') or '').strip()
+    return fallback_url, 'source.zip'
+
+
+def _download_update_package(url: str, dest_path: str):
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    headers = github_headers()
+    mirrored_url = with_update_mirror(url)
+    tried_mirror = mirrored_url != url
+    last_error = None
+    for candidate in ([mirrored_url, url] if tried_mirror else [url]):
+        tmp_path = dest_path + '.tmp'
+        try:
+            print(f"[UpdateDownload] Downloading: {candidate}")
+            with requests.get(candidate, headers=headers, timeout=60, stream=True) as resp:
+                resp.raise_for_status()
+                with open(tmp_path, 'wb') as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 256):
+                        if chunk:
+                            f.write(chunk)
+            os.replace(tmp_path, dest_path)
+            return
+        except Exception as e:
+            last_error = e
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            if candidate != url:
+                print(f"[UpdateDownload] Mirror failed ({e}), fallback to direct")
+                continue
+            raise
+    if last_error:
+        raise last_error
+    raise RuntimeError('下载更新包失败')
+
+
+def _detect_update_payload_root(extracted_root: str):
+    entries = [x for x in os.listdir(extracted_root) if x not in ('.', '..', '__MACOSX')]
+    if len(entries) == 1:
+        single_path = os.path.join(extracted_root, entries[0])
+        if os.path.isdir(single_path):
+            return single_path
+    return extracted_root
+
+
+def _replace_path(src_path: str, dst_path: str):
+    if os.path.isdir(src_path):
+        if os.path.exists(dst_path):
+            if os.path.isdir(dst_path):
+                shutil.rmtree(dst_path)
+            else:
+                os.remove(dst_path)
+        shutil.copytree(src_path, dst_path)
+        return
+    os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    if os.path.exists(dst_path):
+        if os.path.isdir(dst_path):
+            shutil.rmtree(dst_path)
+        else:
+            os.remove(dst_path)
+    shutil.copy2(src_path, dst_path)
+
+
+def _apply_update_payload(payload_root: str, target_root: str, job_id: str = ''):
+    if not os.path.isdir(payload_root):
+        raise ValueError('发布包内容无效')
+    for name in os.listdir(payload_root):
+        if name in UPDATE_PRESERVE_NAMES:
+            if job_id:
+                _append_update_job_log(job_id, f'[skip] 保留本地文件: {name}')
+            continue
+        src = os.path.join(payload_root, name)
+        dst = os.path.join(target_root, name)
+        _replace_path(src, dst)
+        if job_id:
+            _append_update_job_log(job_id, f'[apply] {name}')
+
 def _fetch_latest_release_info(repo_slug: str):
     release_url = f'https://api.github.com/repos/{repo_slug}/releases/latest'
     try:
-        rr = smart_request(release_url, headers=github_headers(), timeout=20)
+        rr = update_request(release_url, headers=github_headers(), timeout=20)
         if rr and rr.status_code == 200:
             release_data = rr.json()
             latest_version = str(release_data.get('tag_name') or release_data.get('name') or '').strip()
             # Remove leading 'v' or 'V' if present to match local format
             if latest_version.lower().startswith('v'):
                 latest_version = latest_version[1:]
+            package_url, asset_name = _pick_release_asset(release_data)
             if latest_version:
                 return {
                     'latest_version': latest_version,
                     'release_url': str(release_data.get('html_url') or '').strip(),
                     'published_at': str(release_data.get('published_at') or '').strip(),
-                    'source': 'release'
+                    'source': 'release',
+                    'package_url': package_url,
+                    'asset_name': asset_name
                 }
     except Exception as e:
         print(f"Error fetching latest release: {e}")
@@ -572,7 +755,9 @@ def _fetch_latest_release_info(repo_slug: str):
         'latest_version': '',
         'release_url': f'https://github.com/{repo_slug}/releases/latest',
         'published_at': '',
-        'source': 'none'
+        'source': 'none',
+        'package_url': '',
+        'asset_name': ''
     }
 
 def _build_update_check_payload():
@@ -588,7 +773,9 @@ def _build_update_check_payload():
         'has_update': _is_remote_version_newer(current_version, latest_version),
         'release_url': latest.get('release_url') or '',
         'published_at': latest.get('published_at') or '',
-        'source': latest.get('source') or 'none'
+        'source': latest.get('source') or 'none',
+        'package_url': latest.get('package_url') or '',
+        'asset_name': latest.get('asset_name') or ''
     }
 
 def _set_update_job(job_id: str, **kwargs):
@@ -612,68 +799,36 @@ def _append_update_job_log(job_id: str, line: str):
             del logs[:len(logs) - 2000]
 
 def _run_update_job(job_id: str):
-    proc = None
     try:
         _set_update_job(job_id, status='checking', percent=10, message='正在检查更新...')
         check_data = _build_update_check_payload()
         latest_version = check_data.get('latest_version') or ''
         has_update = bool(check_data.get('has_update'))
+        package_url = str(check_data.get('package_url') or '').strip()
         _set_update_job(job_id, target_version=latest_version)
         if not has_update:
             _set_update_job(job_id, status='done', percent=100, message='当前已是最新版本')
             return
-        if not _cmd_exists('git'):
-            _set_update_job(job_id, status='error', percent=100, message='未检测到 git，无法自动更新')
+        if not package_url:
+            _set_update_job(job_id, status='error', percent=100, message='未找到可用的发布包资源')
             return
-        git_dir = os.path.join(current_dir, '.git')
-        if not os.path.isdir(git_dir):
-            _set_update_job(job_id, status='error', percent=100, message='当前安装不支持自动更新')
-            return
-        _set_update_job(job_id, status='fetching', percent=30, message='正在拉取远端更新...')
-        fetch_cmd = ['git', 'fetch', '--tags', '--prune']
-        proc = subprocess.Popen(
-            fetch_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            cwd=current_dir,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-        update_processes[job_id] = proc
-        for line in proc.stdout:
-            _append_update_job_log(job_id, line.rstrip('\n'))
-        fetch_rc = proc.wait()
-        if fetch_rc != 0:
-            _set_update_job(job_id, status='error', percent=100, message=f'git fetch 失败，退出码 {fetch_rc}')
-            return
-        _set_update_job(job_id, status='pulling', percent=70, message='正在应用更新...')
-        pull_cmd = ['git', 'pull', '--ff-only']
-        proc = subprocess.Popen(
-            pull_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            cwd=current_dir,
-            text=True,
-            encoding='utf-8',
-            errors='replace'
-        )
-        update_processes[job_id] = proc
-        for line in proc.stdout:
-            _append_update_job_log(job_id, line.rstrip('\n'))
-        pull_rc = proc.wait()
-        if pull_rc != 0:
-            _set_update_job(job_id, status='error', percent=100, message=f'git pull 失败，退出码 {pull_rc}')
-            return
+        with tempfile.TemporaryDirectory(prefix='setupwizard_update_') as temp_dir:
+            pkg_path = os.path.join(temp_dir, 'release_package.zip')
+            extract_dir = os.path.join(temp_dir, 'extract')
+            _set_update_job(job_id, status='downloading', percent=35, message='正在下载发布包...')
+            _append_update_job_log(job_id, f'[download] {package_url}')
+            _append_update_job_log(job_id, f'[download] -> {pkg_path}')
+            _download_update_package(package_url, pkg_path)
+            _set_update_job(job_id, status='extracting', percent=65, message='正在解压发布包...')
+            _extract_zip_safe(pkg_path, extract_dir)
+            payload_root = _detect_update_payload_root(extract_dir)
+            _set_update_job(job_id, status='applying', percent=85, message='正在覆盖更新文件...')
+            _apply_update_payload(payload_root, current_dir, job_id=job_id)
         _set_update_job(job_id, status='done', percent=100, message='更新完成，重启后生效')
     except Exception as e:
         _set_update_job(job_id, status='error', percent=100, message=str(e))
     finally:
-        if proc is not None:
-            try:
-                update_processes.pop(job_id, None)
-            except Exception:
-                pass
+        update_processes.pop(job_id, None)
 
 @app.route('/api/version', methods=['GET'])
 def version_route():
@@ -694,7 +849,7 @@ def update_check_route():
 def update_execute_route():
     with update_jobs_lock:
         for _, item in update_jobs.items():
-            if item.get('status') in ['checking', 'fetching', 'pulling']:
+            if item.get('status') in UPDATE_ACTIVE_STATUSES:
                 return jsonify({'ok': False, 'error': '已有更新任务正在执行'}), 409
         job_id = uuid.uuid4().hex
         update_jobs[job_id] = {
@@ -709,6 +864,7 @@ def update_execute_route():
             'created_at': int(time.time())
         }
     t = threading.Thread(target=_run_update_job, args=(job_id,), daemon=True)
+    update_processes[job_id] = t
     t.start()
     return jsonify({'ok': True, 'job_id': job_id})
 
@@ -719,7 +875,6 @@ def update_progress_route(job_id):
         if not job:
             return jsonify({'ok': False, 'error': 'job not found'}), 404
         return jsonify(dict(job))
-
 # --- Plugin Management ---
 
 def get_github_client():
@@ -741,6 +896,17 @@ def with_github_proxy(url: str) -> str:
         return f"{base}{url}"
     return url
 
+
+def with_update_mirror(url: str) -> str:
+    cfg = load_json(WEBUI_CONFIG_PATH, {})
+    base = str(cfg.get('update_mirror_base') or cfg.get('github_proxy_base') or '').strip()
+    enabled = bool(cfg.get('update_mirror_enabled', cfg.get('github_proxy_enabled', True)))
+    if enabled and base:
+        if not base.endswith('/'):
+            base = base + '/'
+        return f"{base}{url}"
+    return url
+
 def github_headers():
     cfg = load_json(WEBUI_CONFIG_PATH)
     token = os.getenv('SETUPWIZARD_GITHUB_TOKEN') or os.getenv('GITHUB_TOKEN') or cfg.get('github_token')
@@ -749,38 +915,40 @@ def github_headers():
         headers['Authorization'] = f"token {token}"
     return headers
 
-def smart_request(url, headers=None, timeout=15):
-    """
-    Tries to fetch the URL using the configured proxy.
-    If that fails, falls back to direct connection.
-    """
-    proxied_url = with_github_proxy(url)
-    
-    last_error = None
-    
-    # If proxy is enabled and changes the URL
-    if proxied_url != url:
+
+def _request_with_mirror_fallback(url, headers=None, timeout=15, mirror_fn=None):
+    mirrored_url = mirror_fn(url) if callable(mirror_fn) else url
+    first_error = None
+
+    if mirrored_url != url:
         try:
-            print(f"[SmartRequest] Trying proxy: {proxied_url}")
-            r = requests.get(proxied_url, headers=headers, timeout=timeout)
+            print(f"[MirrorRequest] Trying mirrored URL: {mirrored_url}")
+            r = requests.get(mirrored_url, headers=headers, timeout=timeout)
             r.raise_for_status()
             return r
         except Exception as e:
-            last_error = e
-            print(f"[SmartRequest] Proxy failed ({e}), falling back to direct: {url}")
-    
-    # Direct connection (fallback or if proxy disabled)
+            first_error = e
+            print(f"[MirrorRequest] Mirrored URL failed ({e}), fallback to direct: {url}")
+
     try:
         r = requests.get(url, headers=headers, timeout=timeout)
         r.raise_for_status()
         return r
     except Exception as e:
-        if last_error:
-            # If both failed, prioritize showing the proxy error if applicable, 
-            # or maybe combine them. But usually connection error to direct is what matters if proxy failed.
-            # Actually, let's just return the direct error but maybe log more context.
-            print(f"[SmartRequest] Direct connection failed: {e}")
-        raise e
+        if first_error:
+            print(f"[MirrorRequest] Direct URL failed after mirrored URL: {e}")
+        raise
+
+def smart_request(url, headers=None, timeout=15):
+    """
+    Tries to fetch the URL using the configured proxy.
+    If that fails, falls back to direct connection.
+    """
+    return _request_with_mirror_fallback(url, headers=headers, timeout=timeout, mirror_fn=with_github_proxy)
+
+
+def update_request(url, headers=None, timeout=15):
+    return _request_with_mirror_fallback(url, headers=headers, timeout=timeout, mirror_fn=with_update_mirror)
 
 def format_network_error(e):
     """
