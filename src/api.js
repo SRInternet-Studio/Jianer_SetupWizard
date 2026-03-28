@@ -52,6 +52,7 @@ export const jianerStatus = () => api.get('/jianer/status').then(r => r.data)
 export const jianerStart = () => api.post('/jianer/start').then(r => r.data)
 export const jianerStop = () => api.post('/jianer/stop').then(r => r.data)
 export const jianerLogs = () => api.get('/jianer/logs').then(r => r.data)
+export const jianerLogsClear = () => api.post('/jianer/logs/clear').then(r => r.data)
 export const jianerInstallRequirements = () => api.post('/jianer/install-requirements').then(r => r.data)
 
 export const getSystemInfo = () => api.get('/system/info').then(r => r.data)

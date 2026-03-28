@@ -19,6 +19,7 @@ import {
 import {
   ArrowDownload24Regular,
   BookOpen24Regular,
+  Delete24Regular,
   Folder24Regular,
   Play24Regular,
   Save24Regular,
@@ -29,6 +30,7 @@ import {
   jianerConfigSave,
   jianerInstallRequirements,
   jianerLogs,
+  jianerLogsClear,
   jianerStart,
   jianerStatus,
   jianerStop,
@@ -269,6 +271,20 @@ async function installRequirements() {
   }
 }
 
+async function clearLogs() {
+  try {
+    const r = await jianerLogsClear()
+    if (r?.ok === false) {
+      message.error('清空日志失败: ' + (r.error || '未知错误'))
+      return
+    }
+    logs.value = []
+    message.success('日志已清空')
+  } catch (e) {
+    message.error('清空日志失败: ' + (e?.message || '未知错误'))
+  }
+}
+
 async function selectPath(field) {
   try {
     const r = await systemOpenDialog()
@@ -373,6 +389,10 @@ onBeforeUnmount(() => {
                 {{ wsConnected ? 'WebSocket' : '轮询' }}
               </NTag>
               <NButton size="small" secondary @click="logFullscreen = true">全屏</NButton>
+              <NButton size="small" type="error" secondary @click="clearLogs">
+                <template #icon><NIcon><Delete24Regular /></NIcon></template>
+                清空
+              </NButton>
             </NSpace>
           </template>
           <TerminalWindow :lines="logs" height="400px" />
@@ -382,7 +402,13 @@ onBeforeUnmount(() => {
 
     <NModal v-model:show="logFullscreen" preset="card" :bordered="false" title="简儿实时日志" style="width: 96vw; max-width: 96vw;">
       <template #header-extra>
-        <NButton size="small" secondary @click="logFullscreen = false">退出全屏</NButton>
+        <NSpace>
+          <NButton size="small" type="error" secondary @click="clearLogs">
+            <template #icon><NIcon><Delete24Regular /></NIcon></template>
+            清空
+          </NButton>
+          <NButton size="small" secondary @click="logFullscreen = false">退出全屏</NButton>
+        </NSpace>
       </template>
       <TerminalWindow :lines="logs" height="80vh" />
     </NModal>

@@ -1412,6 +1412,14 @@ def _get_jianer_logs_snapshot():
     with jianer_logs_lock:
         return list(jianer_logs)
 
+def _clear_jianer_logs():
+    with jianer_logs_lock:
+        jianer_logs.clear()
+        try:
+            jianer_logs_cv.notify_all()
+        except Exception:
+            pass
+
 def _jianer_log_reader(proc):
     try:
         for line in iter(proc.stdout.readline, ''):
@@ -1432,8 +1440,10 @@ if sock is not None:
             while True:
                 chunk = []
                 with jianer_logs_cv:
-                    jianer_logs_cv.wait_for(lambda: len(jianer_logs) > cursor, timeout=30)
+                    jianer_logs_cv.wait_for(lambda: len(jianer_logs) != cursor, timeout=30)
                     total = len(jianer_logs)
+                    if total < cursor:
+                        cursor = 0
                     if total > cursor:
                         chunk = jianer_logs[cursor:total]
                         cursor = total
@@ -1785,6 +1795,11 @@ def jianer_stop_route():
 @app.route('/api/jianer/logs', methods=['GET'])
 def jianer_logs_route():
     return jsonify({'logs': _get_jianer_logs_snapshot()})
+
+@app.route('/api/jianer/logs/clear', methods=['POST'])
+def jianer_logs_clear_route():
+    _clear_jianer_logs()
+    return jsonify({'ok': True})
 
 def instance_progress_route(id):
     return jsonify({'percent': 100, 'status': 'done', 'message': 'Ready'})

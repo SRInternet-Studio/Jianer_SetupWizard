@@ -4,10 +4,10 @@ import { NForm, NFormItem, NInput, NSelect, NCard, NButton, NIcon } from 'naive-
 import { BookOpen24Regular } from '@vicons/fluent'
 
 const modeOptions = [
-  { label: 'DeepSeek (深度)', value: 'DeepSeek' },
-  { label: 'Google Gemini (读图)', value: 'Google Gemini' },
-  { label: 'ChatGPT-4 (默认4)', value: 'ChatGPT-4' },
-  { label: 'ChatGPT-3.5 (默认3.5)', value: 'ChatGPT-3.5' }
+  { label: 'DeepSeek (深度)', value: 'Ds' },
+  { label: 'Google Gemini (读图)', value: 'GoogleGemini' },
+  { label: 'ChatGPT-4 (默认4)', value: 'Net' },
+  { label: 'ChatGPT-3.5 (默认3.5)', value: 'GPT-3.5' }
 ]
 </script> 
 

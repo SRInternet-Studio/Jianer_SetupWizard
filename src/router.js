@@ -11,6 +11,7 @@ import About from './pages/About.vue'
 import Plugins from './pages/Plugins.vue'
 import NapCatDeploy from './pages/NapCatDeploy.vue'
 import JianerManage from './pages/JianerManage.vue'
+import Update from './pages/Update.vue'
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -25,6 +26,7 @@ export const router = createRouter({
     { path: '/plugins', component: Plugins },
     { path: '/jianer', component: JianerManage },
     { path: '/napcat', component: NapCatDeploy },
+    { path: '/update', component: Update },
     { path: '/apply', component: Apply },
     { path: '/about', component: About }
   ]
