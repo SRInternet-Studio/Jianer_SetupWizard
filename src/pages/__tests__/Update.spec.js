@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import Update from '../Update.vue'
-import { getVersion, checkUpdate, executeUpdate, updateProgress } from '../../api'
+import { getVersion, checkUpdate, executeUpdate, updateProgress, getUpdateMirror, setUpdateMirror } from '../../api'
 
 vi.mock('../../api', () => ({
   getVersion: vi.fn(),
   checkUpdate: vi.fn(),
   executeUpdate: vi.fn(),
-  updateProgress: vi.fn()
+  updateProgress: vi.fn(),
+  getUpdateMirror: vi.fn(),
+  setUpdateMirror: vi.fn()
 }))
 
 vi.mock('naive-ui', async () => {
@@ -29,6 +31,8 @@ describe('Update 自动更新', () => {
     checkUpdate.mockResolvedValue({ ok: true, has_update: true, latest_version: '1.0.0.2', release_url: 'https://example.com/release' })
     executeUpdate.mockResolvedValue({ ok: true, job_id: 'job-1' })
     updateProgress.mockResolvedValue({ percent: 100, status: 'done', message: '更新完成', target_version: '1.0.0.2' })
+    getUpdateMirror.mockResolvedValue({ ok: true, enabled: true, base: 'https://aki.ae-3803.com/' })
+    setUpdateMirror.mockResolvedValue({ ok: true, enabled: true, base: 'https://aki.ae-3803.com/' })
   })
 
   it('初始化时读取版本并检查更新', async () => {
@@ -36,6 +40,7 @@ describe('Update 自动更新', () => {
     await flushPromises()
 
     expect(getVersion).toHaveBeenCalled()
+    expect(getUpdateMirror).toHaveBeenCalled()
     expect(checkUpdate).toHaveBeenCalled()
     expect(wrapper.vm.currentVersion).toBe('1.0.0.1')
     expect(wrapper.vm.hasUpdate).toBe(true)

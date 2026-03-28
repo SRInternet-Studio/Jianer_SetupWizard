@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { NCard, NGrid, NGridItem, NTag, NButton, NSpace, NProgress, useMessage, NIcon } from 'naive-ui'
+import { NCard, NButton, NProgress, useMessage, NIcon, NSwitch, NInput } from 'naive-ui'
 import { ArrowSync24Regular, ArrowDownload24Regular, CheckmarkCircle24Regular, Info24Regular, ErrorCircle24Regular, Sparkle24Regular } from '@vicons/fluent'
-import { checkUpdate, executeUpdate, getVersion, updateProgress } from '../api'
+import { checkUpdate, executeUpdate, getVersion, updateProgress, getUpdateMirror, setUpdateMirror } from '../api'
 
 const message = useMessage()
 const currentVersion = ref('')
@@ -16,6 +16,12 @@ const jobId = ref('')
 const progressPercent = ref(0)
 const progressStatus = ref('default')
 let progressTimer = null
+const mirrorEnabled = ref(true)
+const mirrorBase = ref('')
+const mirrorLoading = ref(false)
+const mirrorSaving = ref(false)
+const mirrorFeedback = ref('')
+const mirrorFeedbackType = ref('default')
 
 const statusType = computed(() => {
   if (progressStatus.value === 'error') return 'error'
@@ -130,8 +136,51 @@ const runAutoUpdate = async () => {
   }
 }
 
+const loadUpdateMirrorConfig = async () => {
+  mirrorLoading.value = true
+  try {
+    const result = await getUpdateMirror()
+    if (!result?.ok) {
+      throw new Error(result?.error || '读取镜像源设置失败')
+    }
+    mirrorEnabled.value = !!(result.enabled ?? result.update_mirror_enabled)
+    mirrorBase.value = result.base || result.update_mirror_base || ''
+  } catch (error) {
+    mirrorFeedbackType.value = 'error'
+    mirrorFeedback.value = error?.message || '读取镜像源设置失败'
+  } finally {
+    mirrorLoading.value = false
+  }
+}
+
+const saveUpdateMirrorConfig = async () => {
+  mirrorSaving.value = true
+  mirrorFeedback.value = ''
+  try {
+    const result = await setUpdateMirror({
+      enabled: mirrorEnabled.value,
+      base: mirrorBase.value
+    })
+    if (!result?.ok) {
+      throw new Error(result?.error || '保存镜像源设置失败')
+    }
+    mirrorEnabled.value = !!(result.enabled ?? mirrorEnabled.value)
+    mirrorBase.value = result.base ?? mirrorBase.value
+    mirrorFeedbackType.value = 'success'
+    mirrorFeedback.value = '镜像源设置已保存'
+    message.success('镜像源设置已保存')
+  } catch (error) {
+    mirrorFeedbackType.value = 'error'
+    mirrorFeedback.value = error?.message || '保存镜像源设置失败'
+    message.error(mirrorFeedback.value)
+  } finally {
+    mirrorSaving.value = false
+  }
+}
+
 onMounted(async () => {
   await loadVersion()
+  await loadUpdateMirrorConfig()
   await refreshUpdateStatus(true)
 })
 
@@ -197,6 +246,34 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="action-bar">
+          <div class="mirror-settings">
+            <div class="mirror-header">
+              <div class="mirror-title">更新镜像源</div>
+              <NSwitch v-model:value="mirrorEnabled" :loading="mirrorLoading">
+                <template #checked>已启用</template>
+                <template #unchecked>已关闭</template>
+              </NSwitch>
+            </div>
+            <div class="mirror-desc">启用后，系统更新请求将优先使用镜像地址；关闭后将直接访问默认源。</div>
+            <div class="mirror-form">
+              <NInput
+                v-model:value="mirrorBase"
+                :disabled="mirrorLoading || mirrorSaving"
+                placeholder="https://example.com/"
+                clearable
+              />
+              <NButton
+                type="primary"
+                :loading="mirrorSaving"
+                :disabled="mirrorLoading || mirrorSaving"
+                @click="saveUpdateMirrorConfig"
+              >
+                保存镜像源
+              </NButton>
+            </div>
+            <div v-if="mirrorFeedback" class="mirror-feedback" :class="mirrorFeedbackType">{{ mirrorFeedback }}</div>
+          </div>
+
           <div class="action-grid">
             <NButton 
               size="large" 
@@ -495,6 +572,55 @@ html[data-theme="dark"] .badge-label {
   border-top: 1px dashed var(--border);
 }
 
+.mirror-settings {
+  margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.mirror-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.mirror-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.mirror-desc {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.mirror-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.mirror-feedback {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.mirror-feedback.success {
+  color: #18a058;
+}
+
+.mirror-feedback.error {
+  color: #d03050;
+}
+
 .action-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -512,6 +638,10 @@ html[data-theme="dark"] .badge-label {
 }
 
 @media (max-width: 640px) {
+  .mirror-form {
+    grid-template-columns: 1fr;
+  }
+
   .action-grid {
     grid-template-columns: 1fr;
   }
