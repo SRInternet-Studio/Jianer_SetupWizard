@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import Welcome from '../Welcome.vue'
-import { napcatStatus, jianerStatus } from '../../api'
+import { getVersion, napcatStatus, jianerStatus } from '../../api'
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
@@ -10,6 +10,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../../api', () => ({
+  getVersion: vi.fn(),
   napcatStatus: vi.fn(),
   napcatWebui: vi.fn(),
   jianerStatus: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('naive-ui', async () => {
 describe('Welcome v1', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getVersion.mockResolvedValue({ backend_version: '1.0.0.1', frontend_version: '1.0.0.1', version: '1.0.0.1' })
     napcatStatus.mockResolvedValue({ running: true, install_path: 'D:/NapCat' })
     jianerStatus.mockResolvedValue({ running: false })
   })
@@ -42,7 +44,9 @@ describe('Welcome v1', () => {
 
     expect(napcatStatus).toHaveBeenCalled()
     expect(jianerStatus).toHaveBeenCalled()
+    expect(getVersion).toHaveBeenCalled()
     expect(wrapper.vm.napcatRunning).toBe(true)
     expect(wrapper.vm.napcatInstallPath).toBe('D:/NapCat')
+    expect(wrapper.vm.currentVersion).toBe('1.0.0.1')
   })
 })

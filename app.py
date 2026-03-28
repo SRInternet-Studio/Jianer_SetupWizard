@@ -26,7 +26,17 @@ try:
 except Exception:
     Sock = None
 
-print("Ver.260226-r")
+def get_app_version():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(base_dir, 'version.json'), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get('version', 'unknown')
+    except Exception:
+        return 'unknown'
+
+APP_VERSION = get_app_version()
+print(f"Ver.{APP_VERSION}")
 
 # In standalone mode, all necessary packages are in the same directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -61,6 +71,9 @@ napcat_progress = {}
 napcat_processes = {}
 jianer_processes = {}
 jianer_logs_buffer = {}
+update_jobs = {}
+update_processes = {}
+update_jobs_lock = threading.Lock()
 
 # Configuration - Look for files in the current directory
 CONFIG_PATH = os.path.join(current_dir, 'config.json')
@@ -459,6 +472,253 @@ def set_github_token_route():
     webui_config['github_token'] = token
     save_json(WEBUI_CONFIG_PATH, webui_config)
     return jsonify({'ok': True})
+
+def _read_frontend_version():
+    package_path = os.path.join(current_dir, 'package.json')
+    data = load_json(package_path, {})
+    return str(data.get('version') or '').strip() or '0.0.0'
+
+def _normalize_version_for_compare(value: str):
+    text = str(value or '').strip().lower()
+    if not text:
+        return []
+    text = re.sub(r'^(ver\.?|v)', '', text)
+    parts = re.split(r'[^0-9a-z]+', text)
+    result = []
+    for part in parts:
+        if not part:
+            continue
+        if part.isdigit():
+            result.append(int(part))
+        else:
+            result.append(part)
+    return result
+
+def _is_remote_version_newer(local_ver: str, remote_ver: str):
+    if not remote_ver:
+        return False
+    # If the local version is 'unknown', any remote version is considered newer
+    if local_ver == 'unknown':
+        return True
+    local_parts = _normalize_version_for_compare(local_ver)
+    remote_parts = _normalize_version_for_compare(remote_ver)
+    if not remote_parts:
+        return False
+    if local_parts == remote_parts:
+        return False
+    max_len = max(len(local_parts), len(remote_parts))
+    for idx in range(max_len):
+        left = local_parts[idx] if idx < len(local_parts) else 0
+        right = remote_parts[idx] if idx < len(remote_parts) else 0
+        if type(left) is type(right):
+            if left == right:
+                continue
+            return right > left
+        left_text = str(left)
+        right_text = str(right)
+        if left_text == right_text:
+            continue
+        return right_text > left_text
+    return False
+
+def _detect_update_repo():
+    env_repo = str(os.getenv('SETUPWIZARD_UPDATE_REPO') or '').strip()
+    if env_repo:
+        return env_repo
+    git_config_path = os.path.join(current_dir, '.git', 'config')
+    if os.path.exists(git_config_path):
+        try:
+            with open(git_config_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            match = re.search(r'url\s*=\s*.*github\.com[:/](?P<slug>[^/\s]+/[^/\s]+?)(?:\.git)?\s*$', content, re.MULTILINE | re.IGNORECASE)
+            if match:
+                return match.group('slug')
+        except Exception:
+            pass
+    return 'SRInternet-Studio/Jianer_SetupWizard'
+
+def _compose_version_payload():
+    frontend_version = _read_frontend_version()
+    backend_version = APP_VERSION
+    return {
+        'ok': True,
+        'version': backend_version,
+        'backend_version': backend_version,
+        'frontend_version': frontend_version,
+        'python': sys.version.split(' ')[0]
+    }
+
+def _fetch_latest_release_info(repo_slug: str):
+    release_url = f'https://api.github.com/repos/{repo_slug}/releases/latest'
+    try:
+        rr = smart_request(release_url, headers=github_headers(), timeout=20)
+        if rr and rr.status_code == 200:
+            release_data = rr.json()
+            latest_version = str(release_data.get('tag_name') or release_data.get('name') or '').strip()
+            # Remove leading 'v' or 'V' if present to match local format
+            if latest_version.lower().startswith('v'):
+                latest_version = latest_version[1:]
+            if latest_version:
+                return {
+                    'latest_version': latest_version,
+                    'release_url': str(release_data.get('html_url') or '').strip(),
+                    'published_at': str(release_data.get('published_at') or '').strip(),
+                    'source': 'release'
+                }
+    except Exception as e:
+        print(f"Error fetching latest release: {e}")
+    
+    return {
+        'latest_version': '',
+        'release_url': f'https://github.com/{repo_slug}/releases/latest',
+        'published_at': '',
+        'source': 'none'
+    }
+
+def _build_update_check_payload():
+    current_version = APP_VERSION
+    repo = _detect_update_repo()
+    latest = _fetch_latest_release_info(repo)
+    latest_version = latest.get('latest_version') or ''
+    return {
+        'ok': True,
+        'repo': repo,
+        'current_version': current_version,
+        'latest_version': latest_version,
+        'has_update': _is_remote_version_newer(current_version, latest_version),
+        'release_url': latest.get('release_url') or '',
+        'published_at': latest.get('published_at') or '',
+        'source': latest.get('source') or 'none'
+    }
+
+def _set_update_job(job_id: str, **kwargs):
+    with update_jobs_lock:
+        job = update_jobs.get(job_id)
+        if not job:
+            return
+        job.update(kwargs)
+
+def _append_update_job_log(job_id: str, line: str):
+    with update_jobs_lock:
+        job = update_jobs.get(job_id)
+        if not job:
+            return
+        logs = job.get('logs')
+        if not isinstance(logs, list):
+            logs = []
+            job['logs'] = logs
+        logs.append(line)
+        if len(logs) > 2000:
+            del logs[:len(logs) - 2000]
+
+def _run_update_job(job_id: str):
+    proc = None
+    try:
+        _set_update_job(job_id, status='checking', percent=10, message='正在检查更新...')
+        check_data = _build_update_check_payload()
+        latest_version = check_data.get('latest_version') or ''
+        has_update = bool(check_data.get('has_update'))
+        _set_update_job(job_id, target_version=latest_version)
+        if not has_update:
+            _set_update_job(job_id, status='done', percent=100, message='当前已是最新版本')
+            return
+        if not _cmd_exists('git'):
+            _set_update_job(job_id, status='error', percent=100, message='未检测到 git，无法自动更新')
+            return
+        git_dir = os.path.join(current_dir, '.git')
+        if not os.path.isdir(git_dir):
+            _set_update_job(job_id, status='error', percent=100, message='当前安装不支持自动更新')
+            return
+        _set_update_job(job_id, status='fetching', percent=30, message='正在拉取远端更新...')
+        fetch_cmd = ['git', 'fetch', '--tags', '--prune']
+        proc = subprocess.Popen(
+            fetch_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=current_dir,
+            text=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+        update_processes[job_id] = proc
+        for line in proc.stdout:
+            _append_update_job_log(job_id, line.rstrip('\n'))
+        fetch_rc = proc.wait()
+        if fetch_rc != 0:
+            _set_update_job(job_id, status='error', percent=100, message=f'git fetch 失败，退出码 {fetch_rc}')
+            return
+        _set_update_job(job_id, status='pulling', percent=70, message='正在应用更新...')
+        pull_cmd = ['git', 'pull', '--ff-only']
+        proc = subprocess.Popen(
+            pull_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=current_dir,
+            text=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+        update_processes[job_id] = proc
+        for line in proc.stdout:
+            _append_update_job_log(job_id, line.rstrip('\n'))
+        pull_rc = proc.wait()
+        if pull_rc != 0:
+            _set_update_job(job_id, status='error', percent=100, message=f'git pull 失败，退出码 {pull_rc}')
+            return
+        _set_update_job(job_id, status='done', percent=100, message='更新完成，重启后生效')
+    except Exception as e:
+        _set_update_job(job_id, status='error', percent=100, message=str(e))
+    finally:
+        if proc is not None:
+            try:
+                update_processes.pop(job_id, None)
+            except Exception:
+                pass
+
+@app.route('/api/version', methods=['GET'])
+def version_route():
+    return jsonify(_compose_version_payload())
+
+@app.route('/api/update/check', methods=['GET'])
+def update_check_route():
+    try:
+        return jsonify(_build_update_check_payload())
+    except requests.exceptions.Timeout:
+        return jsonify({'ok': False, 'error': format_network_error(Timeout('timeout'))}), 504
+    except requests.exceptions.RequestException as e:
+        return jsonify({'ok': False, 'error': format_network_error(e)}), 502
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/api/update/execute', methods=['POST'])
+def update_execute_route():
+    with update_jobs_lock:
+        for _, item in update_jobs.items():
+            if item.get('status') in ['checking', 'fetching', 'pulling']:
+                return jsonify({'ok': False, 'error': '已有更新任务正在执行'}), 409
+        job_id = uuid.uuid4().hex
+        update_jobs[job_id] = {
+            'ok': True,
+            'job_id': job_id,
+            'status': 'queued',
+            'percent': 0,
+            'message': '任务已创建',
+            'logs': [],
+            'current_version': APP_VERSION,
+            'target_version': '',
+            'created_at': int(time.time())
+        }
+    t = threading.Thread(target=_run_update_job, args=(job_id,), daemon=True)
+    t.start()
+    return jsonify({'ok': True, 'job_id': job_id})
+
+@app.route('/api/update/progress/<job_id>', methods=['GET'])
+def update_progress_route(job_id):
+    with update_jobs_lock:
+        job = update_jobs.get(job_id)
+        if not job:
+            return jsonify({'ok': False, 'error': 'job not found'}), 404
+        return jsonify(dict(job))
 
 # --- Plugin Management ---
 

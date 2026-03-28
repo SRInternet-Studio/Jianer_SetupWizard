@@ -8,6 +8,7 @@ import Others from './pages/Others.vue'
 import Advanced from './pages/Advanced.vue'
 import Apply from './pages/Apply.vue'
 import About from './pages/About.vue'
+import Update from './pages/Update.vue'
 import Plugins from './pages/Plugins.vue'
 import NapCatDeploy from './pages/NapCatDeploy.vue'
 import JianerManage from './pages/JianerManage.vue'
@@ -26,6 +27,7 @@ export const router = createRouter({
     { path: '/jianer', component: JianerManage },
     { path: '/napcat', component: NapCatDeploy },
     { path: '/apply', component: Apply },
+    { path: '/update', component: Update },
     { path: '/about', component: About }
   ]
 })

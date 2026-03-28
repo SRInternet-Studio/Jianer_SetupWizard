@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, NCard, NGrid, NGridItem, NIcon, NSpace, NTag, useMessage } from 'naive-ui'
@@ -12,7 +12,7 @@ import {
   Info24Regular,
   Desktop24Regular
 } from '@vicons/fluent'
-import { napcatStatus, napcatWebui, jianerStatus, jianerStart, jianerStop } from '../api'
+import { getVersion, napcatStatus, napcatWebui, jianerStatus, jianerStart, jianerStop } from '../api'
 
 const router = useRouter()
 const message = useMessage()
@@ -22,6 +22,7 @@ const napcatRunning = ref(false)
 const napcatInstallPath = ref('')
 const jianerRunning = ref(false)
 const jianerLoading = ref(false)
+const currentVersion = ref('')
 
 const refreshStatus = async () => {
   loading.value = true
@@ -86,8 +87,18 @@ const stopJianerRuntime = async () => {
 const goTo = (path) => router.push(path)
 const openExternal = (url) => window.open(url, '_blank')
 
+const loadVersion = async () => {
+  try {
+    const result = await getVersion()
+    currentVersion.value = result?.version || result?.backend_version || ''
+  } catch {
+    currentVersion.value = ''
+  }
+}
+
 onMounted(() => {
   refreshStatus()
+  loadVersion()
 })
 </script>
 
@@ -96,6 +107,9 @@ onMounted(() => {
     <div class="hero-section">
       <h1 class="hero-title">欢迎使用 Jianer WebUI</h1>
       <p class="hero-desc">本地化配置与管理面板，快速完成 NapCat 与 Jianer 的部署和运行管理。</p>
+      <NSpace v-if="currentVersion" class="version-strip" size="small">
+        <NTag bordered type="info">当前版本 {{ currentVersion }}</NTag>
+      </NSpace>
       <NSpace style="margin-top: 16px">
         <NButton type="primary" size="large" @click="goTo('/napcat')">
           <template #icon><NIcon><Play24Regular /></NIcon></template>
@@ -231,6 +245,10 @@ onMounted(() => {
   margin: 0;
   max-width: 720px;
   color: var(--muted);
+}
+
+.version-strip {
+  margin-top: 12px;
 }
 
 .status-card {

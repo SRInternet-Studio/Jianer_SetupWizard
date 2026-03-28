@@ -3,7 +3,7 @@ import { NMenu, NMessageProvider, NConfigProvider, NLoadingBarProvider, darkThem
 import { ref, onMounted, onBeforeUnmount, computed, watch, h } from 'vue'
 import { useRouter, useRoute, RouterView } from 'vue-router'
 import AppNavigation from './components/AppNavigation.vue'
-import { WeatherMoon24Regular, WeatherSunny24Regular, Desktop24Regular, Navigation24Regular, Home24Regular, Person24Regular, BrainCircuit24Regular, TextBulletListSquare24Regular, Speaker224Regular, Settings24Regular, WrenchScrewdriver24Regular, PuzzlePiece24Regular, Rocket24Regular, CheckmarkCircle24Regular, Info24Regular, Bot24Regular } from '@vicons/fluent'
+import { WeatherMoon24Regular, WeatherSunny24Regular, Desktop24Regular, Navigation24Regular, Home24Regular, Person24Regular, BrainCircuit24Regular, TextBulletListSquare24Regular, Speaker224Regular, Settings24Regular, WrenchScrewdriver24Regular, PuzzlePiece24Regular, Rocket24Regular, CheckmarkCircle24Regular, Info24Regular, Bot24Regular, ArrowSync24Regular } from '@vicons/fluent'
 import hljs from 'highlight.js/lib/core'
 
 const router = useRouter()
@@ -25,6 +25,7 @@ const menuOptions = [
   { label: 'Jianer 管理', key: '/jianer', icon: icon(Bot24Regular) },
   { label: 'NapCat 管理', key: '/napcat', icon: icon(Rocket24Regular) },
   { label: '核对并应用设置', key: '/apply', icon: icon(CheckmarkCircle24Regular) },
+  { label: '系统更新', key: '/update', icon: icon(ArrowSync24Regular) },
   { label: '关于', key: '/about', icon: icon(Info24Regular) }
 ]
 
