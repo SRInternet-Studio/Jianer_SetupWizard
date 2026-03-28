@@ -417,6 +417,57 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .page-container {
-  padding: 10px;
+  padding: 16px;
+  animation: page-enter 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes page-enter {
+  0% { opacity: 0; transform: translateY(20px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.page-container :deep(.n-card) {
+  border-radius: 20px !important;
+  background: color-mix(in srgb, var(--n-color, var(--surface)) 60%, transparent) !important;
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--n-border-color, var(--border)) 30%, transparent) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.03) !important;
+  transform: translateZ(0);
+  will-change: transform, box-shadow;
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.page-container :deep(.n-card):hover {
+  transform: translateY(-4px) translateZ(0);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
+}
+
+.page-container :deep(.n-button) {
+  border-radius: 12px;
+  transform: translateZ(0);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.page-container :deep(.n-button):hover:not(.n-button--disabled) {
+  transform: scale(1.05) translateZ(0);
+}
+
+.page-container :deep(.n-button):active:not(.n-button--disabled) {
+  transform: scale(0.95) translateZ(0);
+}
+
+.page-container :deep(.n-input),
+.page-container :deep(.n-base-selection) {
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--n-color, var(--surface)) 40%, transparent) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.page-container :deep(.n-input):hover,
+.page-container :deep(.n-base-selection):hover {
+  background: color-mix(in srgb, var(--n-color, var(--surface)) 60%, transparent) !important;
 }
 </style>

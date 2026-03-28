@@ -97,22 +97,7 @@ const openUrl = (url) => {
         </NCard>
       </NGridItem>
 
-      <NGridItem span="1">
-        <NCard class="about-card" title="SR Studio" size="medium">
-          <div class="text-block">
-            <div class="text-title">我们是谁</div>
-            <div class="text-desc">
-              SR思锐团队是以青少年编程为中心的学习与实践社区，倡导开源共享，鼓励学习与二次开发。
-            </div>
-          </div>
-          <div class="text-block" style="margin-top: 10px;">
-            <div class="text-title">理念</div>
-            <div class="text-desc">
-              为民之所好，为众之所爱，坚持探索，只为更好。期待与你一起创造更多可能。
-            </div>
-          </div>
-        </NCard>
-      </NGridItem>
+
 
       <NGridItem span="1 s:2 m:1">
         <NCard class="about-card" title="本地数据" size="medium">
@@ -186,7 +171,13 @@ const openUrl = (url) => {
 
 <style scoped>
 .about-page {
-  padding: 4px;
+  padding: 16px;
+  animation: page-enter 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes page-enter {
+  0% { opacity: 0; transform: translateY(20px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .about-page :deep(.n-grid) {
@@ -206,10 +197,30 @@ const openUrl = (url) => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  border-radius: 16px !important;
+  background: color-mix(in srgb, var(--n-color, var(--surface)) 60%, transparent) !important;
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  border: 1px solid color-mix(in srgb, var(--n-border-color, var(--border)) 40%, transparent) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.03) !important;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, box-shadow;
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.about-card:hover {
+  transform: translateY(-4px) translateZ(0);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08) !important;
 }
 
 .about-card :deep(.n-card__content) {
   flex: 1;
+}
+
+.hero {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--n-color-target, #0078d4) 8%, transparent), color-mix(in srgb, #8a2be2 8%, transparent)) !important;
+  border: 1px solid color-mix(in srgb, var(--n-color-target, #0078d4) 20%, transparent) !important;
 }
 
 .hero :deep(.n-card-header__main) {
@@ -218,80 +229,123 @@ const openUrl = (url) => {
 }
 
 .hero-title {
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 900;
-  letter-spacing: 0.2px;
+  letter-spacing: -0.5px;
+  background: linear-gradient(120deg, var(--n-color-target, #0078d4), #8a2be2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+  transform: translateZ(0);
 }
 
 .hero-sub {
   margin-top: 8px;
-  color: var(--muted);
+  color: var(--n-text-color-3, var(--muted));
   line-height: 1.65;
+  font-size: 15px;
 }
 
 .list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .li {
   display: grid;
-  grid-template-columns: 10px 1fr;
-  gap: 10px;
+  grid-template-columns: 12px 1fr;
+  gap: 12px;
   align-items: start;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.3s ease;
+}
+
+.li:hover {
+  background: color-mix(in srgb, var(--n-color-target, #0078d4) 5%, transparent);
 }
 
 .dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  margin-top: 6px;
-  background: color-mix(in srgb, var(--stroke2) 80%, transparent);
+  margin-top: 8px;
+  background: color-mix(in srgb, var(--n-color-target, #0078d4) 60%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--n-color-target, #0078d4) 40%, transparent);
 }
 
 .dot-accent {
-  background: color-mix(in srgb, var(--accent) 85%, transparent);
+  background: color-mix(in srgb, #f0a020 85%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, #f0a020 40%, transparent);
 }
 
 .li-title {
-  font-weight: 750;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--n-text-color-1);
 }
 
 .li-desc {
-  margin-top: 2px;
-  color: var(--muted);
+  margin-top: 4px;
+  color: var(--n-text-color-3, var(--muted));
   line-height: 1.55;
+  font-size: 13px;
 }
 
 .callouts {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .callout {
-  border-radius: 14px;
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--stroke2) 55%, transparent);
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  border-radius: 12px;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--n-border-color, var(--stroke2)) 40%, transparent);
+  background: color-mix(in srgb, var(--n-color, var(--surface)) 40%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s ease;
+}
+
+.callout:hover {
+  transform: translateX(4px) translateZ(0);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  border-color: color-mix(in srgb, var(--n-color-target, #0078d4) 30%, transparent);
 }
 
 .callout-title {
-  font-weight: 780;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--n-text-color-1);
 }
 
 .callout-desc {
-  margin-top: 4px;
-  color: var(--muted);
+  margin-top: 6px;
+  color: var(--n-text-color-3, var(--muted));
   line-height: 1.55;
+  font-size: 13px;
+}
+
+.text-block {
+  padding: 8px;
+  border-radius: 10px;
+  transition: background 0.3s ease;
+}
+
+.text-block:hover {
+  background: color-mix(in srgb, var(--n-color-target, #0078d4) 4%, transparent);
 }
 
 .text-block .text-title {
   font-weight: 800;
+  font-size: 15px;
+  color: var(--n-text-color-1);
 }
 
 .text-block .text-desc {
   margin-top: 6px;
-  color: var(--muted);
+  color: var(--n-text-color-3, var(--muted));
   line-height: 1.65;
+  font-size: 14px;
 }
 </style>
